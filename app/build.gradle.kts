@@ -40,6 +40,11 @@ android {
         compose = true
     }
 
+    androidResources {
+        // Ensure large model assets are not compressed or altered in the APK
+        noCompress += setOf("gguf", "bin")
+    }
+
     externalNativeBuild {
         cmake {
             path    = file("src/CMakeLists.txt")
@@ -56,8 +61,9 @@ android {
         }
     }
 
-    // still declare your asset-pack module here:
-    assetPacks += listOf(":model_pack")
+    // Remove asset-pack module reference (not present)
+    // If you add dynamic asset delivery later, re-enable this
+    // assetPacks += listOf(":model_pack")
 
 }
 

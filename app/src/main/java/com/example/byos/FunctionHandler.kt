@@ -7,6 +7,8 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraCharacteristics
 import java.io.File
 import java.io.IOException
 
@@ -16,7 +18,23 @@ object FunctionHandler {
      * Returns a user-friendly result string.
      */
     fun dispatch(context: Context, name: String, args: Map<String, String>): String {
+        // Use the exact function name from the AI response
         return when (name) {
+            "toggle_flashlight" -> runCatching {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val cameraIds = cameraManager.cameraIdList
+                for (cameraId in cameraIds) {
+                    val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                    val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                    if (hasFlash) {
+                        // Note: This is a simplified toggle - in a real app you'd track state
+                        cameraManager.setTorchMode(cameraId, true)
+                        return "✅ Flashlight turned on"
+                    }
+                }
+                "❌ No flashlight available on this device"
+            }.getOrElse { "❌ Failed to control flashlight: ${it.message}" }
+
             "copy_file" -> runCatching {
                 val src = args["source"] ?: return "Missing 'source'"
                 val dst = args["destination"] ?: return "Missing 'destination'"
@@ -44,9 +62,39 @@ object FunctionHandler {
             }.getOrElse { "Failed to create folder: ${it.message}" }
 
             "open_application" -> runCatching {
-                val pkg = args["app_name"] ?: return "Missing 'app_name'"
-                val intent = context.packageManager.getLaunchIntentForPackage(pkg)
-                    ?: return "App not found: $pkg"
+                val appArg = args["app_name"] ?: return "Missing 'app_name'"
+                val pm = context.packageManager
+                // If it's already a package name and resolvable
+                pm.getLaunchIntentForPackage(appArg)?.let { intent ->
+                    context.startActivity(intent)
+                    return "Opened app: $appArg"
+                }
+                // Try best-effort fuzzy match on app label
+                val match = pm.getInstalledApplications(0).firstOrNull { appInfo ->
+                    val label = pm.getApplicationLabel(appInfo).toString()
+                    label.equals(appArg, ignoreCase = true) ||
+                    label.contains(appArg, ignoreCase = true)
+                }
+                if (match == null) {
+                    // Heuristic: treat common flashlight aliases as torch toggle
+                    val lower = appArg.lowercase()
+                    if (lower.contains("flash") || lower.contains("torch") || lower.contains("lamp")) {
+                        val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                        val cameraIds = cameraManager.cameraIdList
+                        for (cameraId in cameraIds) {
+                            val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                            val hasFlash = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                            if (hasFlash) {
+                                cameraManager.setTorchMode(cameraId, true)
+                                return "✅ Flashlight turned on"
+                            }
+                        }
+                        return "❌ No flashlight available on this device"
+                    }
+                    return "App not found: $appArg"
+                }
+                val pkg = match.packageName
+                val intent = pm.getLaunchIntentForPackage(pkg) ?: return "App not launchable: $pkg"
                 context.startActivity(intent)
                 "Opened app: $pkg"
             }.getOrElse { "Failed to open app: ${it.message}" }

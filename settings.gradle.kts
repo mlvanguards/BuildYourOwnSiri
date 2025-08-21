@@ -27,6 +27,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "BYOS"
-// include your two modules:
+// Single module app (remove missing asset-pack module)
 include(":app")
-include(":model_pack")
